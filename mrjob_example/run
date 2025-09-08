@@ -1,0 +1,7 @@
+CODE=wordcount_mr.py         # name of the python file
+INPUT_FILE=wap               # name of the input dataset inside /datasets
+OUTPUT_FILE=wordsabcd        # name of the output (it will be in your home directory) 
+
+hdfs dfs -rm -r /user/$USER/$OUTPUT_FILE
+
+python3 $CODE -r hadoop --hadoop-streaming-jar /home2/hadoop-3.4.0/share/hadoop/tools/lib/hadoop-streaming-3.4.0.jar --jobconf mapreduce.job.reduces=4 hdfs:///datasets/$INPUT_FILE --output-dir hdfs:///user/$USER/$OUTPUT_FILE --no-output
