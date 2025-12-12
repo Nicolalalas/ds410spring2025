@@ -20,38 +20,38 @@ object Q2 {
 
   def doCity(input: RDD[String]): RDD[(String, (Int, Int, Int))] = {
     input
-      .map(line => line.split("\t"))
-      .filter(parts => parts.length >= 6)
-      .map(parts => {
+      .map(_.split("\t"))
+      .filter(_.length >= 6)
+      .flatMap(parts => {
         try {
           val state = parts(1)
           val population = parts(3).toLong
           val zipStr = parts(4).trim
           
           // Count zip codes
-          val numZips = if (zipStr == "") 0 else zipStr.split("\\s+").length
+          val numZips = if (zipStr.isEmpty) {
+            0
+          } else {
+            zipStr.split("\\s+").length
+          }
           
           // Skip cities with 0 zip codes
           if (numZips == 0) {
-            null
+            None
           } else {
-            val peoplePerZip = population.toFloat / numZips
+            val peoplePerZip = population.toDouble / numZips
             val isDense = if (population >= 500L * numZips) 1 else 0
             val isSuperDense = if (population >= 1000L * numZips) 1 else 0
             
-            (state, (peoplePerZip, 1, isDense, isSuperDense))
+            Some((state, (peoplePerZip, 1, isDense, isSuperDense)))
           }
         } catch {
-          case _: Exception => null
+          case _: Exception => None
         }
       })
-      .filter(_ != null)
-      .reduceByKey((a, b) => (
-        a._1 + b._1,  // sum of people per zip
-        a._2 + b._2,  // count of cities
-        a._3 + b._3,  // count of dense cities
-        a._4 + b._4   // count of super dense cities
-      ))
+      .reduceByKey { case ((sumPPZ1, count1, dense1, superDense1), (sumPPZ2, count2, dense2, superDense2)) =>
+        (sumPPZ1 + sumPPZ2, count1 + count2, dense1 + dense2, superDense1 + superDense2)
+      }
       .mapValues { case (sumPPZ, cityCount, denseCount, superDenseCount) =>
         val avgPPZ = math.round(sumPPZ / cityCount).toInt
         (avgPPZ, denseCount, superDenseCount)
