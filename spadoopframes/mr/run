@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Remove output directory if it exists
+hdfs dfs -rm -r -f spadoopframes_mr
+
+# Run MapReduce job with combiner
+hadoop jar /usr/local/hadoop/share/hadoop/tools/lib/hadoop-streaming-*.jar \
+  -files q1.py \
+  -mapper "python3 q1.py map" \
+  -combiner "python3 q1.py combine" \
+  -reducer "python3 q1.py reduce" \
+  -input /datasets/cities \
+  -output spadoopframes_mr
