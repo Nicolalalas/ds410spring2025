@@ -14,68 +14,69 @@ class CityStats(MRJob):
         ]
     
     def mapper(self, _, line):
+        # Skip header line
+        if line.startswith('city\t'):
+            return
+            
         parts = line.strip().split('\t')
         
-        if len(parts) < 6:
+        if len(parts) < 7:  # Need 7 fields now!
             return
             
         try:
             state = parts[1]
-            population = int(parts[3])
-            zip_str = parts[4].strip()
+            population = int(parts[4])  # population at index 4
+            zip_str = parts[5].strip()  # zipcodes at index 5
             
-            # Critical: Handle empty string correctly
-            # "".split() gives [] but "".split("\\s+") gives [""]
-            # We check isEmpty first
-            if not zip_str:  # empty string
+            # Count zip codes - handle empty/null
+            if not zip_str or zip_str.strip() == '':
                 num_zips = 0
             else:
                 num_zips = len(zip_str.split())
             
-            if num_zips == 0:
-                return
+            # Calculate dense/super dense (even if num_zips is 0)
+            is_dense = 1 if num_zips > 0 and population >= 500 * num_zips else 0
+            is_super_dense = 1 if num_zips > 0 and population >= 1000 * num_zips else 0
             
-            people_per_zip = population / num_zips
-            is_dense = 1 if population >= 500 * num_zips else 0
-            is_super_dense = 1 if population >= 1000 * num_zips else 0
-            
-            # Yield (state, (sum_ppz, count, dense_count, super_dense_count))
-            yield state, (people_per_zip, 1, is_dense, is_super_dense)
+            # Emit: (state, (total_population, total_zips, dense_count, super_dense_count))
+            yield state, (population, num_zips, is_dense, is_super_dense)
             
         except (ValueError, IndexError):
             return
     
     def combiner(self, state, values):
-        # Aggregate locally before sending to reducer
-        sum_ppz = 0.0
-        count = 0
+        total_pop = 0
+        total_zips = 0
         dense = 0
         super_dense = 0
         
-        for ppz, cnt, d, sd in values:
-            sum_ppz += ppz
-            count += cnt
+        for pop, zips, d, sd in values:
+            total_pop += pop
+            total_zips += zips
             dense += d
             super_dense += sd
         
-        # Emit aggregated values
-        yield state, (sum_ppz, count, dense, super_dense)
+        yield state, (total_pop, total_zips, dense, super_dense)
     
     def reducer(self, state, values):
-        sum_ppz = 0.0
-        count = 0
+        total_pop = 0
+        total_zips = 0
         dense = 0
         super_dense = 0
         
-        for ppz, cnt, d, sd in values:
-            sum_ppz += ppz
-            count += cnt
+        for pop, zips, d, sd in values:
+            total_pop += pop
+            total_zips += zips
             dense += d
             super_dense += sd
         
-        if count > 0:
-            avg_ppz = round(sum_ppz / count)
-            yield state, [avg_ppz, dense, super_dense]
+        # CRITICAL: sum(population) / sum(num_zips)
+        if total_zips > 0:
+            avg_ppz = round(total_pop / total_zips)
+        else:
+            avg_ppz = 0
+            
+        yield state, [avg_ppz, dense, super_dense]
 
 if __name__ == '__main__':
     CityStats.run()
