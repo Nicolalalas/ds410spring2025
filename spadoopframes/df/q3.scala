@@ -10,6 +10,7 @@ object Q3 {
     val spark = getSparkSession()
     registerZipCounter(spark)
     val mydf = getDF(spark)
+    println("DEBUG COUNT = " + mydf.count())
     val answer = doCity(mydf)
     saveIt(answer, "spadoopframes_q3")
   }
