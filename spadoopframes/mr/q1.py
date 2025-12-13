@@ -57,7 +57,7 @@ class CityStats(MRJob):
             dense_count += dense
             super_dense_count += super_dense
         
-        yield state, (total_people_per_zip, total_cities, dense_count, super_dense_count)
+        yield state, (ppz_sum, city_count, dense_count, super_dense_count)
     
     def reducer(self, state, values):
         total_people_per_zip = 0.0
