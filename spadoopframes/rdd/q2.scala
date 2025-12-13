@@ -17,63 +17,67 @@ object Q2 {
     }
     
     def getRDD(sc: SparkContext): RDD[String] = {
-        sc.textFile("/datasets/cities")
+        sc.textFile("/datasets/cities/cities.csv")
     }
     
     def doCity(input: RDD[String]): RDD[(String, (Int, Int, Int))] = {
         input
+            .mapPartitionsWithIndex { (idx, iter) =>
+                // Skip header line (first line of first partition)
+                if (idx == 0) iter.drop(1) else iter
+            }
             .map(_.split("\t"))
-            .filter(_.length >= 6)
+            .filter(_.length >= 7)  // 7 fields now!
             .flatMap { parts =>
                 try {
                     val state = parts(1)
-                    val population = parts(3).toLong
-                    val zipStr = parts(4).trim
+                    val population = parts(4).toLong  // population is at index 4 now!
+                    val zipStr = parts(5).trim  // zipcodes at index 5 now!
                     
-                    // Handle empty string case: "".split("\\s+") gives Array("") with length 1
-                    // We want 0 zips for empty string
-                    val numZips = if (zipStr.isEmpty) {
+                    // Count zip codes - handle empty/null properly
+                    val numZips = if (zipStr == null || zipStr.trim.isEmpty) {
                         0
                     } else {
                         zipStr.split("\\s+").length
                     }
                     
-                    // Skip cities with 0 zip codes
-                    if (numZips == 0) {
-                        None
-                    } else {
-                        val peoplePerZip = population.toDouble / numZips
-                        val isDense = if (population >= 500L * numZips) 1 else 0
-                        val isSuperDense = if (population >= 1000L * numZips) 1 else 0
-                        
-                        Some((state, (peoplePerZip, 1, isDense, isSuperDense)))
-                    }
+                    val isDense = if (numZips > 0 && population >= 500L * numZips) 1 else 0
+                    val isSuperDense = if (numZips > 0 && population >= 1000L * numZips) 1 else 0
+                    
+                    // Emit: (state, (population, num_zips, is_dense, is_super_dense))
+                    Some((state, (population, numZips, isDense, isSuperDense)))
                 } catch {
                     case _: Exception => None
                 }
             }
-            .reduceByKey { case ((sum1, cnt1, d1, sd1), (sum2, cnt2, d2, sd2)) =>
-                (sum1 + sum2, cnt1 + cnt2, d1 + d2, sd1 + sd2)
+            .reduceByKey { case ((pop1, zip1, d1, sd1), (pop2, zip2, d2, sd2)) =>
+                (pop1 + pop2, zip1 + zip2, d1 + d2, sd1 + sd2)
             }
-            .mapValues { case (sumPPZ, count, dense, superDense) =>
-                val avgPPZ = math.round(sumPPZ / count).toInt
+            .mapValues { case (totalPop, totalZips, dense, superDense) =>
+                // CRITICAL: sum(population) / sum(num_zips), NOT avg(pop/zips per city)
+                val avgPPZ = if (totalZips > 0) {
+                    math.round(totalPop.toDouble / totalZips).toInt
+                } else {
+                    0
+                }
                 (avgPPZ, dense, superDense)
             }
     }
    
     def getTestRDD(sc: SparkContext): RDD[String] = {
         sc.parallelize(Seq(
-            "City1\tCA\tCounty1\t10000\t90001 90002\tID1",
-            "City2\tCA\tCounty2\t5000\t90003\tID2",
-            "City3\tNY\tCounty3\t100000\t10001 10002 10003 10004\tID3",
-            "City4\tNY\tCounty4\t50000\t10005\tID4"
+            "city\tstate\tstate_full\tcounty\tpopulation\tzipcodes\tid",  // header
+            "City1\tCA\tCalifornia\tCounty1\t10000\t90001 90002\tID1",
+            "City2\tCA\tCalifornia\tCounty2\t5000\t90003\tID2",
+            "City3\tNY\tNew York\tCounty3\t100000\t10001 10002 10003 10004\tID3",
+            "City4\tNY\tNew York\tCounty4\t50000\t10005\tID4"
         ))
     }
     
     def expectedOutput(sc: SparkContext): RDD[(String, (Int, Int, Int))] = {
         sc.parallelize(Seq(
-            ("CA", (6667, 0, 0)),
-            ("NY", (40000, 1, 0))
+            ("CA", (5000, 0, 0)),
+            ("NY", (30000, 1, 0))
         ))
     }
     
